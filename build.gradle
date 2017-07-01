@@ -16,7 +16,6 @@ apply plugin: 'org.springframework.boot'
 dependencies {
     compile "org.springframework.boot:spring-boot-starter-web"
     compile "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.6.5"
-    compile "org.projectlombok:lombok:1.16.8"
     compile "org.slf4j:slf4j-api:1.7.16"
     testCompile "junit:junit:4.12"
 }
