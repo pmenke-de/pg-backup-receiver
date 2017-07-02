@@ -6,11 +6,15 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
+import org.springframework.util.StreamUtils;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,6 +29,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * Created by pmenke on 01.07.17.
@@ -57,7 +62,7 @@ public class BackupController {
             return ResponseEntity.badRequest().body("Invalid instance name");
         }
         
-        final Path backupFile;
+        Path backupFile = null;
         try {
             backupFile = getStorageDir(instance, "base_backup")
                          .resolve(date.truncatedTo(ChronoUnit.SECONDS).toString());
@@ -70,6 +75,7 @@ public class BackupController {
             Files.setPosixFilePermissions(backupFile, PERMISSION640.value());
         } catch (IOException e) {
             LOG.error("IO-Error while persisting backup", e);
+            safeDelete(backupFile);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("IO-Error while persisting backup");
         }
@@ -111,19 +117,19 @@ public class BackupController {
         }
 
 
-        final Path segmentFile;
+        Path segmentFile = null;
         try {
-            segmentFile = getStorageDir(instance, "wal_segment").resolve(name);
+            segmentFile = getStorageDir(instance, "wal_segment").resolve(name + ".gz");
             if (Files.exists(segmentFile)) {
                 return ResponseEntity.badRequest().body("WAL segment with the given name already exists");
             }
 
             try(final ServletInputStream inputStream = request.getInputStream()){
-                Files.copy(inputStream, segmentFile);
+                writeGZipped(inputStream, segmentFile);
             }
-            Files.setPosixFilePermissions(segmentFile, PERMISSION640.value());
         } catch (IOException e) {
             LOG.error("IO-Error while persisting WAL segment", e);
+            safeDelete(segmentFile);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("IO-Error while persisting WAL segment");
         }
@@ -160,5 +166,23 @@ public class BackupController {
             Files.createDirectories(path, PERMISSION750);
         }
         return path;
+    }
+
+    private static void writeGZipped(InputStream data, Path file) throws IOException {
+        try(final OutputStream os = new GZIPOutputStream(new FileOutputStream(file.toFile()))) {
+            StreamUtils.copy(data, os);
+        }
+        Files.setPosixFilePermissions(file, PERMISSION640.value());
+    }
+    
+    private static void safeDelete(Path path){
+        try {
+            if (path != null) {
+                Files.deleteIfExists(path);
+            }
+        } catch (IOException ignored) {
+            
+        }
+            
     }
 }
